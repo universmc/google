@@ -1,0 +1,69 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Awesome
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+      - reopened
+      - labeled    
+
+concurrency:
+  group: awesome-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  update_library:
+    runs-on: ubuntu-latest
+    name: Convert awesome issues to data
+    # only continue if issue has "awesome-workspace" label
+    if: contains( github.event.issue.labels.*.name, 'awesome-workspace')
+    env:
+      NEW_BRANCH: data/awesome-issue-${{ github.event.issue.number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GOOGLEWORKSPACE_BOT_TOKEN }}
+      - name: GitHub Issue to JSON
+        uses: zachleat/github-issue-to-json-file@v3.0.14
+        with:
+          folder: "data/awesome"
+          issue-template: "awesome.yml"
+          hash-property-name: "github"
+      - name: Cleanup data
+        run: |
+          sed -e "s/https:\/\/github.com\///g" -i data/awesome/*.json
+      - name: Configure Git
+        run: |
+          git config user.name "${{ github.event.issue.user.login }}"
+          git config user.email "${{ github.event.issue.user.login }}@users.noreply.github.com"
+      - name: Commit changes
+        run: |
+          git checkout -B ${{ env.NEW_BRANCH }}
+          git add data/awesome
+          git commit -m "chore: adding data for #${{ github.event.issue.number }}"
+          git push --set-upstream origin ${{ env.NEW_BRANCH }} --force
+      - name: Create Pull Request
+        run: |
+          gh pr create \
+            --title "chore: adding data for project in issue #${{ github.event.issue.number }}" \
+            --body "closes #${{ github.event.issue.number }}" \
+            --base "main" \
+            --head "${{ env.NEW_BRANCH }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GOOGLEWORKSPACE_BOT_TOKEN }}
